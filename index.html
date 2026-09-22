@@ -3,118 +3,239 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Мини-Игра для Telegram</title>
-    <!-- Подключаем скрипт Telegram Web Apps -->
+    <title>Stickman Battle Mini App</title>
     <script src="https://telegram.org"></script>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 0;
-            background-color: #1a1a1a;
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
+            background-color: #111;
+            color: #fff;
+            font-family: sans-serif;
             overflow: hidden;
             user-select: none;
             -webkit-user-select: none;
+            touch-action: none;
         }
-
-        .game-container {
-            text-align: center;
-            padding: 20px;
-            background: #2a2a2a;
-            border-radius: 20px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-            width: 80%;
-            max-width: 350px;
+        #gameCanvas {
+            display: block;
+            background: #222;
+            border-bottom: 4px solid #444;
+            width: 100vw;
+            height: 60vh;
         }
-
-        h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-            color: #3498db;
+                .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40vh;
+            padding: 0 30px;
+            background: #1a1a1a;
+            box-sizing: border-box;
         }
-
-        .score-box {
-            font-size: 40px;
-            font-weight: bold;
-            margin: 20px 0;
-            color: #2ecc71;
-        }
-
-        .click-btn {
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            border: none;
-            background: linear-gradient(145deg, #3498db, #2980b9);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
-            cursor: pointer;
-            outline: none;
-            transition: transform 0.1s ease;
-            font-size: 50px;
-            display: inline-flex;
+        .btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            color: white;
+            border-radius: 15px;
+            display: flex;
             align-items: center;
             justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
-
-        .click-btn:active {
-            transform: scale(0.92);
+        .btn:active {
+            background: rgba(255, 255, 255, 0.4);
         }
-
-        .user-name {
-            font-size: 14px;
-            color: #aaa;
-            margin-top: 15px;
+        .move-block {
+            display: flex;
+            gap: 20px;
+        }
+        .move-btn {
+            width: 80px;
+            height: 80px;
+        }
+        .action-btn {
+            width: 95px;
+            height: 95px;
+            border-radius: 50%;
+            background: rgba(231, 76, 60, 0.3);
+            border-color: rgba(231, 76, 60, 0.6);
+            font-size: 24px;
+        }
+        .action-btn:active {
+            background: rgba(231, 76, 60, 0.7);
         }
     </style>
-</head>
-<body>
+</head><body>
 
-    <div class="game-container">
-        <h1 id="greeting">Привет!</h1>
-        <div class="score-box" id="score">0</div>
-        <button class="click-btn" id="clickBtn">💎</button>
-        <div class="user-name" id="username">Загрузка игрока...</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="move-block">
+            <div class="btn move-btn" id="btnLeft">◀</div>
+            <div class="btn move-btn" id="btnRight">▶</div>
+        </div>
+        <button class="btn action-btn" id="btnAttack">HIT</button>
     </div>
 
     <script>
-        // Инициализация Telegram Web App
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Расширяем приложение на весь экран
+        tg.expand();
 
-        let score = 0;
-        const scoreDisplay = document.getElementById('score');
-        const clickBtn = document.getElementById('clickBtn');
-        const usernameDisplay = document.getElementById('username');
-        const greetingDisplay = document.getElementById('greeting');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-        // Получаем данные о пользователе от Telegram
-        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-            const user = tg.initDataUnsafe.user;
-            usernameDisplay.textContent = `@${user.username || 'игрок'}`;
-            greetingDisplay.textContent = `Привет, ${user.first_name}!`;
-        } else {
-            usernameDisplay.textContent = "Запущено вне Telegram";
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight * 0.6;
         }
+        resizeCanvas();
 
-        // Логика клика
-        clickBtn.addEventListener('click', () => {
-            score++;
-            scoreDisplay.textContent = score;
-            
-            // Легкая вибрация на телефоне при клике (работает в Telegram)
-            if (tg.HapticFeedback) {
-                tg.HapticFeedback.impactOccurred('light');
+        const groundY = canvas.height - 40;
+
+        const player = {
+            x: 50,
+            y: groundY,
+            speed: 4,
+            isAttacking: false,
+            attackTimer: 0,
+            direction: 1
+        };
+                const enemy = {
+            x: canvas.width - 80,
+            y: groundY,
+            maxHp: 100,
+            hp: 100,
+            speed: 1,
+            width: 20
+        };
+
+        let keys = { left: false, right: false };
+
+        const btnLeft = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        const btnAttack = document.getElementById('btnAttack');
+
+        btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); keys.left = true; player.direction = -1; });
+        btnLeft.addEventListener('touchend', () => keys.left = false);
+
+        btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); keys.right = true; player.direction = 1; });
+        btnRight.addEventListener('touchend', () => keys.right = false);
+                btnAttack.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!player.isAttacking) {
+                player.isAttacking = true;
+                player.attackTimer = 15;
+                checkHit();
             }
         });
 
-        // Сообщаем Telegram, что приложение готово к работе
+        function checkHit() {
+            const reach = 45;
+            if (player.direction === 1) {
+                if (player.x + reach >= enemy.x - 10 && player.x <= enemy.x + 10) {
+                    hitEnemy();
+                }
+            } else if (player.direction === -1) {
+                if (player.x - reach <= enemy.x + 10 && player.x >= enemy.x - 10) {
+                    hitEnemy();
+                }
+            }
+        }
+
+        function hitEnemy() {
+            enemy.hp -= 10;
+            if (enemy.hp < 0) enemy.hp = 0;
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('medium');
+            }
+            enemy.x += player.direction * 15;
+        }
+
+        function update() {
+            if (keys.left) player.x -= player.speed;
+            if (keys.right) player.x += player.speed;
+
+            if (player.x < 15) player.x = 15;
+            if (player.x > canvas.width - 15) player.x = canvas.width - 15;
+
+            if (player.isAttacking) {
+                player.attackTimer--;
+                if (player.attackTimer <= 0) {
+                    player.isAttacking = false;
+                }
+            }
+
+            if (enemy.hp > 0) {
+                if (enemy.x > player.x + 15) {
+                    enemy.x -= enemy.speed;
+                } else if (enemy.x < player.x - 15) {
+                    enemy.x += enemy.speed;
+                }
+            } else {
+                setTimeout(() => {
+                    enemy.hp = enemy.maxHp;
+                    enemy.x = Math.random() > 0.5 ? 40 : canvas.width - 40;
+                }, 2000);
+            }
+        }
+                function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y - 50, 10, 0, Math.PI * 2);
+            ctx.moveTo(player.x, player.y - 40); ctx.lineTo(player.x, player.y - 15);
+            ctx.moveTo(player.x, player.y - 15); ctx.lineTo(player.x - 10, player.y);
+            ctx.moveTo(player.x, player.y - 15); ctx.lineTo(player.x + 10, player.y);
+            ctx.moveTo(player.x, player.y - 30); ctx.lineTo(player.x - 10, player.y - 25);
+            ctx.moveTo(player.x, player.y - 30); ctx.lineTo(player.x + 10, player.y - 25);
+            ctx.stroke();
+
+            ctx.strokeStyle = "#f39c12"; 
+            ctx.beginPath();
+            if (player.isAttacking) {
+                ctx.moveTo(player.x, player.y - 25);
+                ctx.lineTo(player.x + (player.direction * 45), player.y - 25);
+            } else {
+                ctx.moveTo(player.x + (player.direction * 5), player.y - 25);
+                ctx.lineTo(player.x + (player.direction * 20), player.y - 10);
+            }
+            ctx.stroke();
+
+            if (enemy.hp > 0) {
+                ctx.strokeStyle = "#e74c3c";
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y - 50, 10, 0, Math.PI * 2);
+                ctx.moveTo(enemy.x, enemy.y - 40); ctx.lineTo(enemy.x, enemy.y - 15);
+                ctx.moveTo(enemy.x, enemy.y - 15); ctx.lineTo(enemy.x - 10, enemy.y);
+                ctx.moveTo(enemy.x, enemy.y - 15); ctx.lineTo(enemy.x + 10, enemy.y);
+                ctx.stroke();
+
+                const barWidth = 50; const barHeight = 6;
+                const barX = enemy.x - barWidth / 2; const barY = enemy.y - 75;
+                ctx.fillStyle = "#555"; ctx.fillRect(barX, barY, barWidth, barHeight);
+                ctx.fillStyle = "#e74c3c";
+                const currentBarWidth = (enemy.hp / enemy.maxHp) * barWidth;
+                ctx.fillRect(barX, barY, currentBarWidth, barHeight);
+            } else {
+                ctx.fillStyle = "#e74c3c"; ctx.font = "18px sans-serif";
+                ctx.fillText("Повержен!", enemy.x - 45, enemy.y - 40);
+            }
+        }
+
+        function gameLoop() {
+            update(); draw(); requestAnimationFrame(gameLoop);
+        }
+
         tg.ready();
+        gameLoop();
     </script>
 </body>
 </html>
+
+    
